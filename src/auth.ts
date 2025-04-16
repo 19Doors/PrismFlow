@@ -2,6 +2,9 @@ import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { JWT } from "next-auth/jwt";
 import Google from "next-auth/providers/google";
+import { db } from "./lib/db";
+import { users } from "./lib/db/schema";
+import { eq } from "drizzle-orm";
 
 declare module "next-auth" {
   interface Session {
@@ -84,6 +87,15 @@ const handler = NextAuth({
       }
       return session;
     },
+    async signIn({user, account}) {
+      const existingUser = await db.select().from(users).where(eq(users.email,user.email!))
+      console.log(existingUser)
+      console.log(user);
+      if(existingUser.length==0) {
+	await db.insert(users).values({email:user.email, name:user.name, createdAt:Date.now()})
+      }
+      return true;
+    }
   }
 })
 export const { handlers, auth, signIn, signOut } = handler
