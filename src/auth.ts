@@ -39,7 +39,8 @@ const handler = NextAuth({
           access_type: "offline",
           response_type: "code"
         }
-      }
+      },
+      allowDangerousEmailAccountLinking: true
     })
   ],
   callbacks: {

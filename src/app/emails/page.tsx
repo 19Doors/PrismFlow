@@ -11,13 +11,16 @@ import { EmailTable } from "../components";
 
 export default function Emails() {
   const [emails, setEmail] = useState([]);
+  const [loading, setLoading] = useState(false);
   async function fetchEmails() {
     try {
+      setLoading(true);
       const response = await fetch("/api/emails");
       if (!response.ok) console.error("Error fetching for emails");
       const em = await response.json();
       // console.log(em);
       setEmail(em);
+      setLoading(false);
     } catch (e) {
       console.error(e);
     }
@@ -58,7 +61,12 @@ export default function Emails() {
               </Button>
             </div>
           </div>
-          {emails.length != 0 && (
+          {loading && (
+            <div className="flex justify-center items-center h-screen font-founders font-bold">
+              <p className="text-4xl">Loading</p>
+            </div>
+          )}
+          {!loading && emails.length != 0 && (
             <div>
               <EmailTable emailData={emails} />
             </div>

@@ -145,6 +145,12 @@ export function SideBar() {
                   sideOffset={4}
                 >
                   <DropdownMenuItem
+                    onClick={() => {signIn("google")}}
+                    className="cursor-pointer"
+                  >
+                   Add Account 
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
                     onClick={() => {}}
                     className="cursor-pointer"
                   >
