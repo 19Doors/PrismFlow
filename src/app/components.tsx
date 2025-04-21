@@ -1,5 +1,8 @@
 "use client";
 import Link from "next/link";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { Letter } from "react-letter";
 import { SessionProvider, signIn, signOut, useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -89,6 +92,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { emailSummarize } from "./lib/AI/gemini";
+import Markdown from "react-markdown";
 
 // Menu items.
 const items = [
@@ -112,6 +117,7 @@ export function SideBar() {
   const [linkAcc, setLinkAcc] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   async function refreshLinkedAccounts() {
+    if(!session) return null;
     try {
       const res = await getLinkedAccounts();
       setLinkAcc(res);
@@ -297,9 +303,14 @@ export function EmailTable({ emailData }) {
   console.log(emailData[0].id);
   const [currentMenu, setCurrentMenu] = useState("all");
   const [currentEmail, setCurrentEmail] = useState("");
+  const [showSummary, setShowSummary] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [currentGenerateSummary, setCurrentGenerateSummary] = useState("");
+
   // Current Email Object
   const [CEO, sCEO] = useState(null);
   const [isCEL, setCEL] = useState(false);
+
   const { data: session, status } = useSession();
   const columns = [
     {
@@ -345,13 +356,14 @@ export function EmailTable({ emailData }) {
       month: "short",
     });
   }
-  async function loadCurrentEmail(id: string) {
+  async function loadCurrentEmail(id: string, email: string) {
+    setShowSummary(false);
     console.log("CALLED" + id);
     setCurrentEmail(() => id);
     if (id == "") return null;
     // Primary Email Current Fetch
     setCEL(true);
-    const currEmail = await getEmailFromID(session?.user.email!, id);
+    const currEmail = await getEmailFromID(email!, id);
     setCEL(false);
     sCEO(currEmail);
   }
@@ -386,7 +398,15 @@ export function EmailTable({ emailData }) {
     }
     return res;
   }
-  // console.log(table.getRowModel().rows);
+  async function generateSummary() {
+    if(!CEO) return null;
+    setSummaryLoading(true);
+    const response = await emailSummarize(CEO);
+    setCurrentGenerateSummary(response);
+    setSummaryLoading(false);
+    setShowSummary(true);
+    console.log(response);
+  }
   return (
     <motion.div className="w-full flex overflow-hidden">
       <motion.div
@@ -404,7 +424,7 @@ export function EmailTable({ emailData }) {
           <motion.div
             key={id}
             className="border-b p-3 sm:p-4 flex justify-between hover:shadow-sm/40 cursor-pointer"
-            onClick={() => loadCurrentEmail(row.getValue("id"))}
+            onClick={() => loadCurrentEmail(row.getValue("id"),row.getValue('email'))}
           >
             <div className="grow min-w-0 font-inter flex gap-x-2">
               <div
@@ -476,9 +496,28 @@ export function EmailTable({ emailData }) {
                         </p>
                       </div>
                       <div>
-                        <motion.button className="text-xs font-medium flex cursor-pointer gap-x-2 underline">
+                        <motion.button className="text-xs font-medium flex cursor-pointer gap-x-2 underline" onClick={generateSummary}>
                           Generate Summary <Brain size="20" />
                         </motion.button>
+			{
+			  showSummary && (
+			    <div className="text-xs">
+			    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={{
+			      h2: ({node,...props}) => (
+				<h2 className="font-bold mb-1 mt-2" {...props}/>
+			      ),
+			      ul: ({node, ...props}) => (
+				<ul className="" {...props} />
+			      ),
+			      a: ({node, ...props}) => (
+				<a className="underline text-[#C33149]" {...props} />
+			      )
+			    }}>
+			      {currentGenerateSummary}
+			    </ReactMarkdown>
+			    </div>
+			  )
+			}
                       </div>
                     </div>
                   </div>

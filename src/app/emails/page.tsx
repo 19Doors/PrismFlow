@@ -25,6 +25,8 @@ export default function Emails() {
   const [loading, setLoading] = useState(false);
   const { data: session, status } = useSession();
   async function fetchEmails() {
+    if(!session) return null;
+    console.log("TRY")
     try {
       setLoading(true);
       console.log(session);
@@ -70,7 +72,7 @@ export default function Emails() {
   return (
     <div className="w-full">
       {status == "unauthenticated" && (
-        <div className="flex flex-col justify-center items-center w-full">
+        <div className="flex flex-col justify-center items-center w-full h-screen">
           <Card className="shadow-lg p-6 font-founders rounded-sm">
             <CardTitle className="text-xl">Not connected to Google</CardTitle>
             <CardContent>
