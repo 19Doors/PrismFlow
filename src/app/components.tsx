@@ -1,7 +1,9 @@
 "use client";
 import Link from "next/link";
+import { Letter } from "react-letter";
 import { SessionProvider, signIn, signOut, useSession } from "next-auth/react";
-import { ReactNode, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ReactNode, useEffect, useState } from "react";
 import {
   ColumnDef,
   createTable,
@@ -23,7 +25,15 @@ export function Navbar() {
   );
 }
 
-import { Calendar, Home, Inbox, Search, Settings } from "lucide-react";
+import {
+  Brain,
+  Calendar,
+  Home,
+  Inbox,
+  Minimize2,
+  Search,
+  Settings,
+} from "lucide-react";
 
 import {
   Sidebar,
@@ -36,6 +46,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarProvider,
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
@@ -56,6 +67,28 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { db } from "@/lib/db";
+import { linkedAccounts } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import {
+  deleteAccountEmail,
+  getEmailFromID,
+  getLinkedAccounts,
+} from "./lib/dbData";
+import { Badge } from "@/components/ui/badge";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { Separator } from "@/components/ui/separator";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 // Menu items.
 const items = [
@@ -76,6 +109,29 @@ const items = [
 export function SideBar() {
   const { data: session, status } = useSession();
   const [selectedTab, setSelectedTab] = useState("Dashboard");
+  const [linkAcc, setLinkAcc] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  async function refreshLinkedAccounts() {
+    try {
+      const res = await getLinkedAccounts();
+      setLinkAcc(res);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  async function peaceSignOut() {
+    await signOut();
+  }
+  async function deleteAccount(email: any) {
+    try {
+      await deleteAccountEmail(email);
+    } catch (e) {
+      console.error("ERROR DELETING ACCOUNT");
+    }
+  }
+  useEffect(() => {
+    refreshLinkedAccounts();
+  }, [isLoading]);
   return (
     <Sidebar className="font-inter" variant="sidebar" collapsible="offcanvas">
       <SidebarHeader className={`mt-2 ml-2 -mb-4`}>
@@ -125,8 +181,8 @@ export function SideBar() {
           <SidebarMenu>
             <SidebarMenuItem>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild className="">
-                  <SidebarMenuButton className="" size="lg">
+                <DropdownMenuTrigger asChild>
+                  <SidebarMenuButton className="cursor-pointer" size="lg">
                     <Avatar>
                       <AvatarImage src={`${session.user.image}`} />
                       <AvatarFallback>PF</AvatarFallback>
@@ -144,11 +200,40 @@ export function SideBar() {
                   side="right"
                   sideOffset={4}
                 >
+                  {linkAcc.map((acc: any, id: number) => {
+                    return (
+                      <DropdownMenuItem key={id}>
+                        <ContextMenu>
+                          <ContextMenuTrigger>{acc.email}</ContextMenuTrigger>
+                          <ContextMenuContent>
+                            <ContextMenuItem
+                              inset
+                              className="font-inter font-medium"
+                              onClick={() => {
+                                deleteAccount(acc.email);
+                              }}
+                            >
+                              LogOut
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  <MenubarSeparator />
                   <DropdownMenuItem
-                    onClick={() => {signIn("google")}}
+                    onClick={refreshLinkedAccounts}
                     className="cursor-pointer"
                   >
-                   Add Account 
+                    Refresh
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      signIn("google");
+                    }}
+                    className="cursor-pointer"
+                  >
+                    Add Account
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => {}}
@@ -159,7 +244,7 @@ export function SideBar() {
                   <MenubarSeparator />
                   <DropdownMenuItem
                     onClick={() => {
-                      signOut();
+                      peaceSignOut();
                     }}
                     className="cursor-pointer"
                   >
@@ -178,41 +263,65 @@ export function SideBar() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   return <SessionProvider>{children}</SessionProvider>;
 }
+function EmailSidebar() {
+  return (
+    <Sidebar
+      collapsible="none"
+      className="border-r md:h-full font-inter md:w-[280px]"
+    >
+      <SidebarHeader>
+        <h1 className="font-bold text-4xl font-founders">Emails</h1>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel className="font-light">Menu</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className={`font-medium cursor-pointer ${currentMenu == "all" && "border"}`}
+                >
+                  All Inboxes
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarFooter />
+    </Sidebar>
+  );
+}
 export function EmailTable({ emailData }) {
-  type email = {
-    snippet: string;
-    from: string;
-    subject: string;
-  };
   let data = emailData;
-  // let data: email[] = emailData.map((d: any) => {
-  //   return {
-  //     from: d.from,
-  //     snippet: d.snippet,
-  //     subject: d.subject,
-  //   };
-  // });
+  console.log(emailData[0].id);
+  const [currentMenu, setCurrentMenu] = useState("all");
+  const [currentEmail, setCurrentEmail] = useState("");
+  // Current Email Object
+  const [CEO, sCEO] = useState(null);
+  const [isCEL, setCEL] = useState(false);
+  const { data: session, status } = useSession();
   const columns = [
     {
+      accessorKey: "id",
+    },
+    {
       accessorKey: "subject",
-      header: () => <div className="font-bold font-inter">Subject</div>,
-      cell: ({row}) => {
-	let val = row.getValue("subject");
-	return <div className="font-inter font-bold">{val}</div>
-      }
     },
     {
       accessorKey: "from",
-      header: () => <div className="font-bold font-inter">From</div>,
-      cell: ({row}) => {
-	let val = row.getValue("from");
-	let showVal = val.substr(0,val.indexOf('<')).trim();
-	return <div className="font-inter font-medium">{showVal}</div>
-      }
     },
     {
       accessorKey: "snippet",
-      header: () => <div className="font-bold font-inter">Snippet</div>,
+    },
+    {
+      accessorKey: "email",
+    },
+    {
+      accessorKey: "date",
+    },
+    {
+      accessorKey: "labelIds",
     },
   ];
   const table = useReactTable({
@@ -220,38 +329,169 @@ export function EmailTable({ emailData }) {
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
-  console.log(table.getRowModel().rows);
+  function dateToCurr(date) {
+    const eDate = new Date(Number(date) * 1000);
+    const nowDate = new Date();
+    const isToday = eDate.toDateString() == nowDate.toDateString();
+    if (isToday) {
+      return eDate.toLocaleString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+    }
+    return eDate.toLocaleString(undefined, {
+      day: "numeric",
+      month: "short",
+    });
+  }
+  async function loadCurrentEmail(id: string) {
+    console.log("CALLED" + id);
+    setCurrentEmail(() => id);
+    if (id == "") return null;
+    // Primary Email Current Fetch
+    setCEL(true);
+    const currEmail = await getEmailFromID(session?.user.email!, id);
+    setCEL(false);
+    sCEO(currEmail);
+  }
+
+  function extractNameAndEmail(input) {
+    if (!input || typeof input !== "string") {
+      return { name: null, email: null };
+    }
+
+    const openBracketIndex = input.indexOf("<");
+    const closeBracketIndex = input.indexOf(">");
+
+    let name = null;
+    let email = null;
+
+    if (openBracketIndex !== -1) {
+      name = input.substring(0, openBracketIndex).trim();
+    }
+
+    if (openBracketIndex !== -1 && closeBracketIndex !== -1) {
+      email = input.substring(openBracketIndex + 1, closeBracketIndex);
+    }
+
+    return { name, email };
+  }
+  function extractInitials(input: string) {
+    input = input.toUpperCase();
+    let x = input.split(" ");
+    let res = "";
+    for (let c of x) {
+      res += c[0];
+    }
+    return res;
+  }
+  // console.log(table.getRowModel().rows);
   return (
-    <Table className="max-w-full">
-      <TableHeader>
-        {table.getHeaderGroups().map((headerGroup) => (
-          <TableRow key={headerGroup.id}>
-            {headerGroup.headers.map((header) => {
-              return (
-                <TableHead key={header.id}>
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                </TableHead>
-              );
-            })}
-          </TableRow>
+    <motion.div className="w-full flex overflow-hidden">
+      <motion.div
+        className="max-h-screen overflow-y-scroll"
+        animate={{
+          width: currentEmail != "" ? "50%" : "100%",
+        }}
+        transition={{
+          type: "spring",
+          stiffness: 300,
+          damping: 30,
+        }}
+      >
+        {table.getRowModel().rows.map((row, id) => (
+          <motion.div
+            key={id}
+            className="border-b p-3 sm:p-4 flex justify-between hover:shadow-sm/40 cursor-pointer"
+            onClick={() => loadCurrentEmail(row.getValue("id"))}
+          >
+            <div className="grow min-w-0 font-inter flex gap-x-2">
+              <div
+                className={`${row.getValue("labelIds")?.includes("UNREAD") ? "bg-blue-500" : ""} w-2 h-2 rounded-full mt-2 flex-none`}
+              />
+              <div className="flex-1 flex flex-col max-w-full min-w-0">
+                <div className="font-bold shrink">{row.getValue("from")}</div>
+                <div className="font-medium text-sm shrink">
+                  {row.getValue("subject")}
+                </div>
+                <span className="text-sm shrink overflow-hidden text-ellipse">
+                  {row.getValue("snippet")}
+                </span>
+              </div>
+            </div>
+            <div className="text-right flex gap-x-2 flex-none text-sm text-gray-500 mt-1 sm:mt-0">
+	      <p>{row.getValue("email")}</p>
+              <p>{dateToCurr(row.getValue("date"))}</p>
+            </div>
+          </motion.div>
         ))}
-      </TableHeader>
-      <TableBody>
-        {table.getRowModel().rows.map((row) => (
-          <TableRow key={row.id}>
-            {row.getVisibleCells().map((cell) => {
-              return (
-                <TableCell key={cell.id} className="whitespace-normal">
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </TableCell>
-              );
-            })}
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+      </motion.div>
+      <AnimatePresence>
+        {currentEmail != "" && (
+          <motion.div
+            className="p-4 border-l max-w-1/2 max-h-screen overflow-auto"
+            initial={{ x: "100%", width: "0%" }}
+            animate={{ x: "0%", width: "50%" }}
+            exit={{ x: "100%" }}
+            transition={{
+              type: "spring",
+              stiffness: 300,
+              damping: 30,
+              mass: 1,
+            }}
+          >
+            {isCEL && (
+              <div className="flex justify-center items-center font-founders h-screen font-bold text-2xl">
+                Email Loading;
+              </div>
+            )}
+            {!isCEL && (
+              <div className="p-4 flex flex-col font-inter gap-y-4">
+                <div className="flex flex-col gap-y-4 border-b">
+                  <div className="flex justify-between items-start">
+                    <p className="text-xl font-bold">{CEO.subject}</p>
+                    <button
+                      className="cursor-pointer m-0 p-0"
+                      onClick={() => setCurrentEmail("")}
+                    >
+                      <Minimize2 />
+                    </button>
+                  </div>
+                  <div className="flex gap-x-2">
+                    {extractNameAndEmail(CEO.from).name != null && (
+                      <Avatar className="w-12 h-12">
+                        <AvatarFallback>
+                          {extractInitials(extractNameAndEmail(CEO.from).name)}
+                        </AvatarFallback>
+                      </Avatar>
+                    )}
+                    <div>
+                      <div>
+                        <p className="font-medium">
+                          {extractNameAndEmail(CEO.from).name}
+                        </p>
+                        <p className="font text-sm">
+                          {extractNameAndEmail(CEO.from).email}
+                        </p>
+                      </div>
+                      <div>
+                        <motion.button className="text-xs font-medium flex cursor-pointer gap-x-2 underline">
+                          Generate Summary <Brain size="20" />
+                        </motion.button>
+                      </div>
+                    </div>
+                  </div>
+                  <div></div>
+                </div>
+                <div>
+                  <Letter html={CEO.htmlBody} text={CEO.plainText} />
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

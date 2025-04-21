@@ -8,27 +8,65 @@ import { useEffect, useState } from "react";
 import { Dialog, DialogTrigger } from "@radix-ui/react-dialog";
 import { DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { EmailTable } from "../components";
+import {
+  checkFirstTimeSync,
+  checkFirstTimeSyncAccounts,
+  firstTimeSync,
+  firstTimeSyncAccounts,
+  getHidFromDB,
+  getHidFromDBAccount,
+  incrementSync,
+} from "../lib/email_sync";
+import { getEmails, getLinkedAccounts } from "../lib/dbData";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Emails() {
   const [emails, setEmail] = useState([]);
   const [loading, setLoading] = useState(false);
+  const { data: session, status } = useSession();
   async function fetchEmails() {
     try {
       setLoading(true);
-      const response = await fetch("/api/emails");
-      if (!response.ok) console.error("Error fetching for emails");
-      const em = await response.json();
-      // console.log(em);
-      setEmail(em);
+      console.log(session);
+      console.log(status);
+      if (status != "authenticated") {
+        setLoading(false);
+        return null;
+      }
+      //Check for primary
+      let check = await checkFirstTimeSync(session?.user.email!);
+
+      let accounts = await getLinkedAccounts();
+      let cEmails = [session.user.email!];
+      console.log(accounts);
+      for(let account of accounts) {
+	let acheck = await checkFirstTimeSyncAccounts(account.email);
+	if(acheck) {
+	  await firstTimeSyncAccounts(account,account.email);
+	}else {
+	  let hid = await getHidFromDBAccount(account.email);
+	  await incrementSync(account.accessToken!, hid!, account.email!,account);
+	}
+	cEmails.push(account.email);
+      }
+      if (check) {
+        await firstTimeSync(session);
+      } else {
+        let hid = await getHidFromDB(session?.user.email!);
+        await incrementSync(session?.accessToken!, hid!, session.user.email!);
+      }
+      console.log(cEmails);
+      let emailsAll = await getEmails(cEmails);
+      console.log(emailsAll);
+      setEmail(e=>emailsAll);
       setLoading(false);
     } catch (e) {
       console.error(e);
     }
   }
-  const { data: session, status } = useSession();
   useEffect(() => {
     fetchEmails();
-  }, []);
+  }, [status]);
   return (
     <div className="w-full">
       {status == "unauthenticated" && (
@@ -47,27 +85,14 @@ export default function Emails() {
         </div>
       )}
       {status == "authenticated" && (
-        <div className="flex flex-col w-full gap-y-4">
-          <div className="flex justify-between items-baseline border-b">
-            <h1 className="font-founders text-4xl font-bold">Emails</h1>
-            <div>
-              <Button
-                variant="outline"
-                size="default"
-                className="font-founders cursor-pointer"
-                onClick={fetchEmails}
-              >
-                <RefreshCw />
-              </Button>
-            </div>
-          </div>
+        <div className="flex w-full h-screen">
           {loading && (
-            <div className="flex justify-center items-center h-screen font-founders font-bold">
-              <p className="text-4xl">Loading</p>
+            <div className="h-full w-full flex flex-col justify-center items-center font-bold font-founders text-2xl">
+	      Loading
             </div>
           )}
-          {!loading && emails.length != 0 && (
-            <div>
+          {!loading && emails && emails.length != 0 && (
+            <div className="flex-1">
               <EmailTable emailData={emails} />
             </div>
           )}

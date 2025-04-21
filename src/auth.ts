@@ -3,7 +3,7 @@ import GoogleProvider from "next-auth/providers/google";
 import { JWT } from "next-auth/jwt";
 import Google from "next-auth/providers/google";
 import { db } from "./lib/db";
-import { users } from "./lib/db/schema";
+import { linkedAccounts, users } from "./lib/db/schema";
 import { eq } from "drizzle-orm";
 
 declare module "next-auth" {
@@ -45,12 +45,23 @@ const handler = NextAuth({
   ],
   callbacks: {
     async jwt({token,account}) {
+      // console.log("JWT");
+      // console.log(token);
+      // console.log(account);
       if(account) {
+	const cs = await auth();
+	if(cs?.user) {
+	  // Primary Email in use
+	  console.log("Using existing primary details");
+	  token.email=cs.user.email;
+	  token.accessToken=cs.accessToken;
+	  token.name=cs.user.name;
+	}else {
 	  token.accessToken = account.access_token;
 	  token.refreshToken = account.refresh_token;
 	  token.accessTokenExpires = account.expires_at ? account.expires_at * 1000 : 0;
 	}
-      
+      }
       if (token.accessTokenExpires && Date.now() > token.accessTokenExpires) {
         try {
           const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -63,11 +74,11 @@ const handler = NextAuth({
               refresh_token: token.refreshToken as string,
             }),
           });
-          
+
           const refreshedTokens = await response.json();
-          
+
           if (!response.ok) throw refreshedTokens;
-          
+
           return {
             ...token,
             accessToken: refreshedTokens.access_token,
@@ -81,22 +92,42 @@ const handler = NextAuth({
       }
       return token;
     },
-    async session({ session, token }) {
-      if (session.user) {
-        session.accessToken = token.accessToken as string;
-        session.error = token.error as string;
-      }
+    async session({ session, token}) {
+      // console.log("Session Updated ");
+      // console.log(session);
+      // console.log(token);
+      session.accessToken=token.accessToken;
+      session.error = token.error as string;
+      session.user.name=token.name;
       return session;
     },
-    async signIn({user, account}) {
-      const existingUser = await db.select().from(users).where(eq(users.email,user.email!))
-      console.log(existingUser)
-      console.log(user);
-      if(existingUser.length==0) {
-	await db.insert(users).values({email:user.email, name:user.name, createdAt:Date.now()})
+    async signIn({user, account, profile}) {
+      // get Current Session
+      const currentSession = await auth();
+      if(currentSession?.user.email) {
+	//== Adding More Emails ==
+	console.log("Adding more emails to primary email: "+currentSession.user.email);
+	console.log("Storing Additional Email: "+profile?.email+", "+profile?.email);
+	await db.insert(linkedAccounts).values({primaryEmail:currentSession.user.email,email:profile?.email,accessToken:account?.access_token,refreshToken:account?.refresh_token,expiresAt:account?.expires_at,name:profile?.name, image:user.image});
+
+      }else {
+	console.log("Primary Email SignIn: "+profile?.email);
+
+	let primaryUser = await db.select().from(users).where(eq(users.email,profile?.email!));
+	if(primaryUser.length==0) {
+	  console.log("Adding Primary Email to DB");
+	  try {
+	    await db.insert(users).values({email:profile?.email,name:profile?.name,createdAt:Date.now()});
+	    console.log("Primary Email Added to DB");
+	  }catch(e) {
+	    console.error("Failure to add Primary Email to DB, error: "+e);
+	  }
+	}else {
+	  console.log("Signing In to "+user.email);
+	}
       }
       return true;
-    }
+    },
   }
 })
 export const { handlers, auth, signIn, signOut } = handler
